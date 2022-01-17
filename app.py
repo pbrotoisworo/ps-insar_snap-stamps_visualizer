@@ -1,4 +1,3 @@
-from altair.vegalite.v4.schema.core import Vector2boolean
 import streamlit as st
 import scipy.io
 import pandas as pd
@@ -6,35 +5,13 @@ import numpy as np
 import altair as alt
 from datetime import date, timedelta, datetime
 import plotly.graph_objs as go
+import geopandas as gpd
+import traceback
 
-st.set_page_config(page_title='PS-InSAR StAMPS Visualizer', initial_sidebar_state='expanded') #, layout='wide')
+from utils.processing import read_data
 
-@st.cache()
-def read_data(fn, n=100):
-	fn = sorted(fn)
-	mat = scipy.io.loadmat(fn[0])
-	mat1 = scipy.io.loadmat(fn[1])
-	lonlat = np.hsplit(mat['lonlat'], 2)
-	df = pd.DataFrame(mat['ph_mm'], columns=mat['day'].flatten())
-	df['lon'] = lonlat[0]
-	df['lat'] = lonlat[1]
-	df['ave'] = mat1['ph_disp'].flatten()
-	df['ave'] = df['ave'].apply(lambda x: round(x, 2))
-	df = df.reset_index().sample(n)
-	df = pd.melt(df, id_vars=['lon', 'lat', 'ave', 'index'], var_name='Date')
-	df.Date = [date(1,1,1) + timedelta(i) - timedelta(367) for i in df.Date]		
-	df = df.rename(columns={'index':'ps', 'value': 'Displacement'})
-	df['Displacement'] = df['Displacement'].apply(lambda x: round(x, 2))
+st.set_page_config(page_title='PS-InSAR StAMPS Visualizer', initial_sidebar_state='expanded', layout='wide')
 
-	slave_days = mat['day'].flatten()
-	master_day = mat['master_day'].flatten()
-	days = np.sort(np.append(slave_days, master_day))
-	bperp = mat['bperp'].flatten()
-	bperp_df = pd.DataFrame({'Date': days, 'Bperp': bperp})
-	bperp_df['Day'] = bperp_df.Date.apply(lambda x: 'Slave' if x != int(master_day[0]) else 'Master')
-	bperp_df['Temporal'] = bperp_df.Date.apply(lambda x: x - int(master_day[0]))
-	bperp_df.Date = [date(1,1,1) + timedelta(i) - timedelta(367) for i in bperp_df.Date]	
-	return df, bperp_df, slave_days, master_day
 
 def main():
 	st.header('PS-InSAR SNAP - StAMPS Workflow Visualizer')
@@ -47,58 +24,63 @@ def main():
 		suggestions on how to improve this, just let me know.</p>
 		""", unsafe_allow_html=True)
 
-	with st.beta_expander('Data Points Control Panel', expanded=True):
-		inputFile = st.file_uploader('Upload two (2) files (ps_plot_ts_v-do.mat, \
-		ps_plot_v-do.mat)', type=('mat'), accept_multiple_files=True, help='Make sure to upload the right files (ps_plot_ts_v-do.mat, ps_plot_v-do.mat) to avoid errors.')
-		
-		a1, a2 = st.beta_columns((5,3))
-		b1, b2 = st.beta_columns((2))
+	with st.expander('Data Ingestion', expanded=True):
+		c1, c2 = st.columns(2)
+		with c1:
+			mat_files = st.file_uploader('Upload mat files', accept_multiple_files=True, type=['mat'])
+		with c2:
+			mask = st.file_uploader('Upload GeoJSON mask', type=['geojson'])
+		if len(mat_files) < 2:
+			st.info('Get started by uploading the required .mat files.')
+			st.stop()
 
-		nmax = a2.number_input('Max points for slider', min_value=10000, max_value=50000, value=10000, help='Adjust the maximum number of points that can be plotted. Range: 10,000-50,000. Default: 10,000')
-		n = a1.slider('Select number of points to plot', min_value=100, max_value=nmax, value=5000, help='Defines the number of points to be plotted. Default: 5,000')
-		
-		if len(inputFile) == 0:
-			df, bperp_df, slave_days, master_day = read_data(['ps_plot_ts_v-do.mat', 'ps_plot_v-do.mat'], n)
-		else:
-			try:
-				inputFile = [inputFile[i].name for i in range(2)]
-				df, bperp_df, slave_days, master_day = read_data(inputFile, n)
-			except:
-				st.error('Error: Make sure to upload the correct files: ps_plot_ts_v-do.mat, ps_plot_v-do.mat')
-				return
+	with st.expander('Data Points Control Panel', expanded=True):
+		c1, c2, _ = st.columns(3)
+		with c1:
+			ps_count = st.empty()
+			nmax_input = st.empty()
+			nmax = nmax_input.number_input('Maximum points to visualize', min_value=0, value=1000, max_value=50000)
+			# nmax = st.number_input('Maximum points to visualize', min_value=10, max_value=50000)
+		with c2:
+			st.markdown('#')
+			ps_filter_input = st.empty()
+			ps_filter = ps_filter_input.text_input(
+				label='Select specific PS objects',
+				help='Must be comma separated value with no space'
+			)
+			ps_filter = ps_filter.split(',')
+			if len(ps_filter) > 1 and ps_filter[0] != '':
+				ps_filter = [int(x) for x in ps_filter]
+
+		# a1, a2 = st.columns((5,3))
+		b1, b2 = st.columns((2))
+
+		mat_files = [mat_files[i].name for i in range(2)]
+		df, bperp_df, slave_days, master_day, nmax_out = read_data(fn=mat_files, upload_mask=mask, n=nmax)
+		if nmax_out != nmax:
+			nmax_input.number_input('Maximum points to visualize', value=nmax_out)
+		ps_count.markdown(f'PS objects in dataset: `{nmax_out}`')
 
 		selectdate = b1.select_slider('Select Date', df.Date.unique().tolist(), value=df.Date.unique().tolist()[3], help='Defines the date to be considered in the plot of PS')
 		mapbox_df = df[df.Date.isin([selectdate])]
 
-		multiselection = b2.multiselect('Select PS by ID', sorted(df.ps.unique().tolist()), 
-			default=df.ps.unique().tolist()[:5], help="Let user select the PS points by ID. Default: 5 PS points (choosen randomly)")
+		# Filtered DF for timeline graph
+		if len(ps_filter) > 1 and ps_filter[0] != '':
+			filtered_df = df[df['ps'].isin(ps_filter)]
+		else:
+			# If there is no input it will get the first 5 PS values by default
+			filtered_df = df.copy()
+			ps_filter = filtered_df['ps'].tolist()[:5]
+			filtered_df = filtered_df[filtered_df['ps'].isin(pd.Series(ps_filter))]
+			ps_filter_input.text_input(label='Select PS by ID', value=','.join([str(x) for x in ps_filter]), help='Must be comma separated values')
 
-	filtered_df = df[df['ps'].isin(multiselection)]
+		st.markdown(f"""<p align="justify">Number of selected PS: <strong>{len(ps_filter)}</strong> (<font color="#6DD929">green markers</font>).
+				<br>Use the map customization panel to change the appearance of the plots. You can change the color scale, 
+				base map style and/or the size of the markers.</p>
+				""", unsafe_allow_html=True)
 
-	md = date(1,1,1) + timedelta(int(master_day[0])) - timedelta(367)
-	with st.beta_expander('Metadata'):
-		a1, a2 = st.beta_columns((2))
-		a1.info(f'Master Date: {md}')
-		a2.info(f'Number of slave images: {len(slave_days)}')
-		bperp_chart = alt.Chart(bperp_df).mark_circle(size=72).encode(
-			x=alt.X('Temporal:Q', title='Temporal Baseline (days)'), 
-			y=alt.Y('Bperp:Q', title='Perpendicular Baseline (m)'), 
-			color=alt.Color('Day:N', legend=alt.Legend(title=None, orient='top-right')),
-			tooltip=[alt.Tooltip('Day:N', title='Type'),
-						alt.Tooltip('Date:T'), 
-						alt.Tooltip('Bperp:Q', format='.2f'), 
-						alt.Tooltip('Temporal:Q')]
-			)
-
-		st.altair_chart(bperp_chart, use_container_width=True)
-
-	st.markdown(f"""<p align="justify">Number of selected PS: <strong>{len(multiselection)}</strong> (<font color="#6DD929">green markers</font>).
-			<br>Use the map customization panel to change the appearance of the plots. You can change the color scale, 
-			base map style and/or the size of the markers.</p>
-			""", unsafe_allow_html=True)
-
-	with st.beta_expander('Map Customization Panel'):
-		m1, m2, m3 = st.beta_columns(3)
+	with st.expander('Map Customization Panel'):
+		m1, m2, m3 = st.columns(3)
 		style_dict = {'Carto-Positron':'carto-positron', 'Openstreetmap':'open-street-map', 'Carto Dark':'carto-darkmatter', 
 			'Stamen Terrain':'stamen-terrain', 'Stamen Toner':'stamen-toner', 'Stamen Watercolor':'stamen-watercolor'}
 
@@ -163,30 +145,31 @@ def main():
 	st.plotly_chart(fig, use_container_width=True)
 	
 	# safeguard for empty selection 
-	if len(multiselection) == 0:
-	    return 
+	if len(ps_filter) == 0:
+		return
 	st.markdown('---')
 	filters.reset_index(inplace=True, drop=True)
-	filters = filters.rename(columns={'ps': 'PS ID', 'lon':'Longitude', 'lat':'Latitude', 
+	filters = filters.rename(columns={'ps': 'PS ID', 'lon': 'Longitude', 'lat': 'Latitude',
 						'ave': 'Average Disp'})
 	filters = filters[['PS ID', 'Latitude', 'Longitude', 'Average Disp']]
-	st.markdown(f'<center>Additional information on the selected points (count = {len(multiselection)})</center>', unsafe_allow_html=True)
+	st.markdown(f'<center>Additional information on the selected points (count = {len(ps_filter)})</center>', unsafe_allow_html=True)
 	st.table(filters)
 
 	highlight = alt.selection_single(on='mouseover', fields=['Date'], nearest=True)
 	
 	def to_altair_datetime(dt):
-	    dt = pd.to_datetime(dt) - timedelta(60)
-	    return alt.DateTime(year=dt.year, month=dt.month, date=dt.day,
-	                        hours=dt.hour, minutes=dt.minute, seconds=dt.second,
-	                        milliseconds=0.001 * dt.microsecond)
+		dt = pd.to_datetime(dt) - timedelta(60)
+		return alt.DateTime(year=dt.year, month=dt.month, date=dt.day,
+							hours=dt.hour, minutes=dt.minute, seconds=dt.second,
+							milliseconds=0.001 * dt.microsecond)
 	
 	domain = [to_altair_datetime(df.Date.unique().min() - timedelta(60)), 
 			to_altair_datetime(df.Date.unique().max() + timedelta(120))]
 
-	st.markdown(f"""<center>Time series plot of the selected PS (count: {len(multiselection)})</center>
+	st.markdown(f"""<center>Time series plot of the selected PS (count: {len(ps_filter)})</center>
 			""", unsafe_allow_html=True)
 
+	filtered_df.drop(['geometry'], axis=1, inplace=True)
 	altC = alt.Chart(filtered_df).properties(height=400).mark_line(point=True).encode(
 		x=alt.X('Date:T', scale=alt.Scale(domain=domain, clamp=True)),
 		y=alt.Y('Displacement:Q', title='Displacement (mm)', 
@@ -200,22 +183,41 @@ def main():
 	st.altair_chart(altC, use_container_width=True)
 
 	st.markdown(f'Descriptive statistics for {txt}PS displacement{velocity} (mm{txt1}) of selection (n = {len(mapbox_df)}).')
-	c1, c2, c3 = st.beta_columns(3)
+	c1, c2, c3 = st.columns(3)
 	n = st.slider('Select bin width', min_value=1, max_value=10, value=1, help='Adjusts the width of bins. Default: 1 unit')
 	c1.info(f'Highest: {colr.max():0.2f}')
 	c2.info(f'Lowest: {colr.min():0.2f}')
 	c3.info(f'Average: {colr.mean():0.2f}')
 
-	altHist = alt.Chart(mapbox_df).mark_bar().encode(
+	altHist = alt.Chart(mapbox_df.drop(['geometry'], axis=1)).mark_bar().encode(
 		x=alt.X(f'{histX}:Q', bin=alt.Bin(step=n), title=f'{txt}Displacement (mm{txt1})'),
 		y='count()',
 		color=alt.Color('count()', legend=alt.Legend(title='Count', orient='top-left'), scale=alt.Scale(scheme='Redblue')), # )
 		tooltip=[alt.Tooltip('count()', format=',.0f', title='Count', bin={'binned':True, 'step':int(f'{n}')})]).interactive(bind_y=False)
 	st.markdown(f'<center>Distribution of PS Displacement{velocity} (bins = {n})</center>', unsafe_allow_html=True)
 	st.altair_chart(altHist, use_container_width=True)
+
+	md = date(1, 1, 1) + timedelta(int(master_day[0])) - timedelta(367)
+	with st.expander('Metadata'):
+		a1, a2 = st.columns((2))
+		a1.info(f'Master Date: {md}')
+		a2.info(f'Number of slave images: {len(slave_days)}')
+		bperp_chart = alt.Chart(bperp_df).mark_circle(size=72).encode(
+			x=alt.X('Temporal:Q', title='Temporal Baseline (days)'),
+			y=alt.Y('Bperp:Q', title='Perpendicular Baseline (m)'),
+			color=alt.Color('Day:N', legend=alt.Legend(title=None, orient='top-right')),
+			tooltip=[alt.Tooltip('Day:N', title='Type'),
+						alt.Tooltip('Date:T'),
+						alt.Tooltip('Bperp:Q', format='.2f'),
+						alt.Tooltip('Temporal:Q')]
+			)
+
+		st.altair_chart(bperp_chart, use_container_width=True)
+
 	st.markdown('---')
 	st.info("""
-		Created by: **K. Quisado** [GitHub](https://github.com/kenquix/ps-insar_visualizer) as part of course project on Microwave RS under the MS
+		Using a modified version of PS-InSAR StAMPS Visualizer originally created by Created by: **K. Quisado** 
+		[GitHub](https://github.com/kenquix/ps-insar_visualizer) as part of course project on Microwave RS under the MS
 		Geomatics Engineering (Remote Sensing) Program, University of the Philippines - Diliman
 		""")
 
