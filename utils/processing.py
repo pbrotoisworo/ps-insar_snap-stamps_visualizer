@@ -4,9 +4,12 @@ from scipy.io import loadmat
 import pandas as pd
 import geopandas as gpd
 import numpy as np
+import os
+from osgeo import gdal
+from typing import Union
 
 
-def read_data(fn, upload_mask, n=100):
+def read_data(fn, upload_subset, upload_mask, n: Union[str, None] = 100):
 
     fn = sorted(fn)
     mat = loadmat(fn[0])  # TS data
@@ -20,7 +23,9 @@ def read_data(fn, upload_mask, n=100):
     df['ave'] = df['ave'].apply(lambda x: round(x, 2))
 
     # If max n exceeds len df, cap max n to len df
-    if n > len(df):
+    if not n:
+        n = len(df)
+    elif n > len(df):
         n = len(df)
         st.warning(f'Maximum value exceeds dataset size! Maximum value adjusted to {n}')
     df = df.reset_index().sample(n)
@@ -43,8 +48,41 @@ def read_data(fn, upload_mask, n=100):
     df['geometry'] = gpd.points_from_xy(df['lon'], df['lat'], crs='EPSG:4326')
     df = gpd.GeoDataFrame(df, crs='EPSG:4326')
 
+    # Subset data
+    if upload_subset is not None:
+        df_subset = gpd.GeoDataFrame.from_file(upload_subset)
+        df = gpd.clip(df, mask=df_subset)
+
+    # Mask out data
     if upload_mask is not None:
         df_mask = gpd.GeoDataFrame.from_file(upload_mask)
-        df = gpd.clip(df, mask=df_mask)
+        df['is_in_mask'] = df['geometry'].apply(lambda x: x.within(df_mask['geometry'].iloc[0]))
+        df = df.loc[df['is_in_mask'] == False]
+        df.drop(['is_in_mask'], axis=1, inplace=True)
 
     return df, bperp_df, slave_days, master_day, n
+
+
+def export_data(st_upload, out_folder, out_tiff_basename, algorithm='invdist'):
+
+    gdf, _, _, _, _ = read_data(st_upload, None, None)
+
+    scratch_shp = os.path.join(out_folder, 'points.shp')
+    out_raster_vel = os.path.join(out_folder, out_tiff_basename)
+    # altair_chart.to_csv(os.path.join(out_folder, 'ts.csv'))
+
+    gdf['Date'] = gdf['Date'].astype(str)
+    gdf.to_file(scratch_shp)
+    # gdf.drop(['geometry'], axis=1).to_csv('points.csv', index=False)
+
+    rasterDs = gdal.Grid(
+        out_raster_vel,
+        scratch_shp,
+        format='GTiff',
+        algorithm=algorithm,
+        zfield='ave'
+    )
+    rasterDs.FlushCache()
+    del rasterDs
+
+    return
