@@ -160,10 +160,9 @@ def main():
 			""", unsafe_allow_html=True)
 
 	filtered_df.drop(['geometry'], axis=1, inplace=True)
-	# altC = plot_ts(filtered_df)
 
-	# st.altair_chart(altC, use_container_width=True)
-	st.altair_chart(plot_ts(filtered_df), use_container_width=True)
+	ts_reg_selection = st.selectbox('Trend line for timeseries', ('Linear Regression', 'LOESS'))
+	st.altair_chart(plot_ts(filtered_df, reg=ts_reg_selection), use_container_width=True)
 
 	st.markdown(f'Descriptive statistics for {txt}PS displacement{velocity} (mm{txt1}) of selection (n = {len(mapbox_df)}).')
 	c1, c2, c3 = st.columns(3)

@@ -1,6 +1,9 @@
 import altair as alt
 import pandas as pd
-from datetime import timedelta
+from datetime import timedelta, datetime
+import numpy as np
+import scipy.stats as stats
+import streamlit as st
 
 
 def to_altair_datetime(dt):
@@ -10,8 +13,22 @@ def to_altair_datetime(dt):
                         milliseconds=0.001 * dt.microsecond)
 
 
-def plot_ts(df):
+def dt_to_dec(dt):
+    """Convert a datetime to decimal year."""
+    year_start = datetime(dt.year, 1, 1)
+    year_end = year_start.replace(year=dt.year+1)
+    return dt.year + ((dt - year_start).total_seconds() /  # seconds so far
+        float((year_end - year_start).total_seconds()))  # seconds in year
 
+
+def plot_ts(df, reg='Linear Regression'):
+    """
+    Create interactive timeseries plot
+
+    :param df: Filtered df
+    :param reg: Method for regression model ['Linear Regression', 'LOESS']
+    :return:
+    """
     highlight = alt.selection_single(on='mouseover', fields=['Date'], nearest=True)
     domain = [to_altair_datetime(df.Date.unique().min() - timedelta(60)),
               to_altair_datetime(df.Date.unique().max() + timedelta(120))]
@@ -25,19 +42,39 @@ def plot_ts(df):
     df_reg = pd.DataFrame(columns=['ps', 'Date', 'lon', 'lat', 'Displacement'])
     df_reg = df_reg.append(rows)
     df_reg['Origin'] = 'red'  # Add empty column for encoding
-    # df_reg['color'] = 'red'
 
-    reg = alt.Chart(df_reg)\
-        .mark_circle(opacity=1.0)\
-        .encode(
-            x=alt.X('Date:T'),
-            y=alt.Y('Displacement:Q'),
-            # color='Origin',
-            color=alt.Color('Origin', scale=alt.Scale(scheme='reds'), legend=alt.Legend(title="Trends", orient='bottom')),
-        )\
-        .transform_loess('Date', 'Displacement') \
-        .transform_calculate(Origin='" LOESS"')\
-        .mark_line(color='red', size=6, strokeDash=[5, 5])
+    if reg == 'Linear Regression':
+
+        reg = alt.Chart(df_reg).mark_point().encode(
+            x='Date:T',
+            y='Displacement:Q',
+            color=alt.Color('Origin',
+                            scale=alt.Scale(scheme='reds'),
+                            legend=alt.Legend(title="Trends", orient='bottom'))
+        )
+        reg = reg.transform_regression('Date', 'Displacement').transform_calculate(Origin='" Linear Regression"').mark_line(color='red', size=4, strokeDash=[5, 5])
+
+        # Calculate velocity per year
+        d_ts = np.array(df_reg['Displacement'])
+        years = np.array(pd.to_datetime(df_reg['Date']).apply(dt_to_dec))
+        d_fit = stats.linregress(years, d_ts)
+        vel = d_fit[0]
+        std = d_fit[4]
+
+        st.markdown('Linear velocity: {v:.2f} +/- {s:.2f} [{u}/yr]'.format(v=vel, s=std, u='mm'))
+
+    elif reg == 'LOESS':
+        reg = alt.Chart(df_reg)\
+            .mark_circle(opacity=1.0)\
+            .encode(
+                x=alt.X('Date:T'),
+                y=alt.Y('Displacement:Q'),
+                # color='Origin',
+                color=alt.Color('Origin', scale=alt.Scale(scheme='reds'), legend=alt.Legend(title="Trends", orient='bottom')),
+            )\
+            .transform_loess('Date', 'Displacement') \
+            .transform_calculate(Origin='" LOESS"')\
+            .mark_line(color='red', size=6, strokeDash=[5, 5])
 
     altC = alt.Chart(df).properties(height=400).mark_line(point=False, opacity=0.5)\
         .encode(
@@ -49,4 +86,3 @@ def plot_ts(df):
     ).add_selection(highlight).interactive(bind_y=False)
 
     return alt.layer(altC, reg).resolve_scale(color='independent')
-    # return altC + reg
