@@ -1,4 +1,5 @@
 streamlit
+geopandas
 scipy
 pandas
 numpy
