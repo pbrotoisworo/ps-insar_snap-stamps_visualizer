@@ -31,7 +31,7 @@ def main():
 		with c2:
 			subset_shp = st.file_uploader('Upload GeoJSON to subset data', type=['geojson'])
 		with c3:
-			mask_shp = st.file_uploader('Upload GeoJSON to mask data', type=['geojson'])
+			mask_shp = st.file_uploader('Upload GeoJSON to mask out data', type=['geojson'])
 		if len(mat_files) < 2:
 			st.info('Get started by uploading the required .mat files.')
 			st.stop()
@@ -86,14 +86,14 @@ def main():
 			'Stamen Terrain':'stamen-terrain', 'Stamen Toner':'stamen-toner', 'Stamen Watercolor':'stamen-watercolor'}
 
 		style = m1.selectbox('Select map style', ['Carto-Positron', 'Openstreetmap', 'Carto Dark', 
-			'Stamen Terrain', 'Stamen Toner', 'Stamen Watercolor'], index=2) 
+			'Stamen Terrain', 'Stamen Toner', 'Stamen Watercolor'], index=2)
 
 		colorscale = m2.selectbox('Select color scale', ['Greys','YlGnBu','Greens','YlOrRd','Bluered','RdBu','Reds','Blues','Picnic',
 			'Rainbow','Portland','Jet','Hot','Blackbody','Earth','Electric','Viridis','Cividis'], index=15)
 
 		msize = m3.slider('Select marker size', min_value=2, max_value=15, value=5, step=1)
 
-	mean_los = st.checkbox('Click to plot mean LOS Displacement')
+	mean_los = st.checkbox('Click to plot mean LOS Displacement', value=True)
 
 	if mean_los:
 		colr = mapbox_df.ave
@@ -161,7 +161,9 @@ def main():
 
 	filtered_df.drop(['geometry'], axis=1, inplace=True)
 
-	ts_reg_selection = st.selectbox('Trend line for timeseries', ('Linear Regression', 'LOESS'))
+	c1, c2, c3 = st.columns(3)
+	with c1:
+		ts_reg_selection = st.selectbox('Trend line for timeseries', ('Linear Regression', 'LOESS'))
 	st.altair_chart(plot_ts(filtered_df, reg=ts_reg_selection), use_container_width=True)
 
 	st.markdown(f'Descriptive statistics for {txt}PS displacement{velocity} (mm{txt1}) of selection (n = {len(mapbox_df)}).')

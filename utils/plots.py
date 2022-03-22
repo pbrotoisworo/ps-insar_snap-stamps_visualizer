@@ -33,7 +33,9 @@ def plot_ts(df, reg='Linear Regression'):
     domain = [to_altair_datetime(df.Date.unique().min() - timedelta(60)),
               to_altair_datetime(df.Date.unique().max() + timedelta(120))]
 
+    #################
     # Add trendline
+    #################
     dates = [x for x in df['Date'].unique()]
     rows = []
     for date in dates:
