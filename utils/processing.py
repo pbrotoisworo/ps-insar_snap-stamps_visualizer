@@ -16,9 +16,10 @@ from zipfile import ZipFile
 
 def read_data(fn, upload_subset, upload_mask, n: Union[str, None] = 100):
 
-    fn = sorted(fn)
-    mat = loadmat(fn[0])  # TS data
-    mat1 = loadmat(fn[1])  # Non-TS data
+    ts = [x for x in fn if 'ps_plot_ts' in x.name][0]
+    non_ts = [x for x in fn if 'ps_plot_v' in x.name][0]
+    mat = loadmat(ts)  # TS data
+    mat1 = loadmat(non_ts)  # Non-TS data
 
     lonlat = np.hsplit(mat['lonlat'], 2)
     df = pd.DataFrame(mat['ph_mm'], columns=mat['day'].flatten())

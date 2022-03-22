@@ -56,7 +56,6 @@ def main():
 		# a1, a2 = st.columns((5,3))
 		b1, b2 = st.columns(2)
 
-		mat_files = [mat_files[i].name for i in range(2)]
 		df, bperp_df, slave_days, master_day, nmax_out = read_data(fn=mat_files, upload_subset=subset_shp, upload_mask=mask_shp, n=nmax)
 		if nmax_out != nmax:
 			nmax_input.number_input('Maximum points to visualize', value=nmax_out)
