@@ -5,10 +5,11 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import os
-try:
-    from osgeo import gdal
-except ImportError:
-    import gdal
+import streamlit as st
+# try:
+#     from osgeo import gdal
+# except ImportError:
+#     import gdal
 from typing import Union
 from zipfile import ZipFile
 
@@ -68,60 +69,61 @@ def read_data(fn, upload_subset, upload_mask, n: Union[str, None] = 100):
 
 
 def export_data(st_upload, out_folder, out_tiff_basename, algorithm='invdist'):
-
-    gdf, _, _, _, _ = read_data(st_upload, None, None)
-
-    scratch_shp = os.path.join(out_folder, 'points.shp')
-    out_raster_vel = os.path.join(out_folder, out_tiff_basename)
-    # altair_chart.to_csv(os.path.join(out_folder, 'ts.csv'))
-
-    gdf['Date'] = gdf['Date'].astype(str)
-    gdf.to_file(scratch_shp)
-    # gdf.drop(['geometry'], axis=1).to_csv('points.csv', index=False)
-
-    rasterDs = gdal.Grid(
-        out_raster_vel,
-        scratch_shp,
-        format='GTiff',
-        algorithm=algorithm,
-        zfield='ave'
-    )
-    rasterDs.FlushCache()
-    del rasterDs
-
+    st.error('Export data is currently disabled')
     return
-
-
-def load_google_earth(in_file, out_json):
-    """
-    Convert Google Earth KML/KMZ file to GeoJSON
-    """
-
-    is_kmz = True if in_file.name.endswith('.kmz') else False
-
-    if is_kmz:
-        with ZipFile(in_file) as zf:
-            zf.extractall(os.path.dirname(out_json))
-        in_file = os.path.join(os.path.dirname(out_json), 'doc.kml')
-
-    srcDS = gdal.OpenEx(in_file)
-    ds = gdal.VectorTranslate(out_json, srcDS, format='GeoJSON')
-
-    # Clean Google Earth elements
-    gdf = gpd.GeoDataFrame.from_file(out_json)
-    gdf.set_crs(epsg=4326, inplace=True)
-    gdf = gdf[gdf['geometry'].astype(str).str.contains('LINESTRING') == True]
-
-    # Close datasets
-    ds = None
-    srcDS = None
-    if is_kmz:
-        try:
-            os.remove(in_file)
-        except Exception:
-            pass
-
-    return gdf
+#     gdf, _, _, _, _ = read_data(st_upload, None, None)
+#
+#     scratch_shp = os.path.join(out_folder, 'points.shp')
+#     out_raster_vel = os.path.join(out_folder, out_tiff_basename)
+#     # altair_chart.to_csv(os.path.join(out_folder, 'ts.csv'))
+#
+#     gdf['Date'] = gdf['Date'].astype(str)
+#     gdf.to_file(scratch_shp)
+#     # gdf.drop(['geometry'], axis=1).to_csv('points.csv', index=False)
+#
+#     rasterDs = gdal.Grid(
+#         out_raster_vel,
+#         scratch_shp,
+#         format='GTiff',
+#         algorithm=algorithm,
+#         zfield='ave'
+#     )
+#     rasterDs.FlushCache()
+#     del rasterDs
+#
+#     return
+#
+#
+# def load_google_earth(in_file, out_json):
+#     """
+#     Convert Google Earth KML/KMZ file to GeoJSON
+#     """
+#
+#     is_kmz = True if in_file.name.endswith('.kmz') else False
+#
+#     if is_kmz:
+#         with ZipFile(in_file) as zf:
+#             zf.extractall(os.path.dirname(out_json))
+#         in_file = os.path.join(os.path.dirname(out_json), 'doc.kml')
+#
+#     srcDS = gdal.OpenEx(in_file)
+#     ds = gdal.VectorTranslate(out_json, srcDS, format='GeoJSON')
+#
+#     # Clean Google Earth elements
+#     gdf = gpd.GeoDataFrame.from_file(out_json)
+#     gdf.set_crs(epsg=4326, inplace=True)
+#     gdf = gdf[gdf['geometry'].astype(str).str.contains('LINESTRING') == True]
+#
+#     # Close datasets
+#     ds = None
+#     srcDS = None
+#     if is_kmz:
+#         try:
+#             os.remove(in_file)
+#         except Exception:
+#             pass
+#
+#     return gdf
 
 
 if __name__ == '__main__':
