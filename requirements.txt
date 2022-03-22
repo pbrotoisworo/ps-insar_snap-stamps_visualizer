@@ -5,4 +5,3 @@ pandas
 numpy
 altair
 plotly
-gdal
