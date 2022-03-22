@@ -3,5 +3,5 @@ geopandas
 scipy
 pandas
 numpy
-altair
-plotly
+altair==4.1.0
+plotly==5.3.0
