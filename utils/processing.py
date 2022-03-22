@@ -5,8 +5,12 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import os
-from osgeo import gdal
+try:
+    from osgeo import gdal
+except ImportError:
+    import gdal
 from typing import Union
+from zipfile import ZipFile
 
 
 def read_data(fn, upload_subset, upload_mask, n: Union[str, None] = 100):
@@ -86,3 +90,39 @@ def export_data(st_upload, out_folder, out_tiff_basename, algorithm='invdist'):
     del rasterDs
 
     return
+
+
+def load_google_earth(in_file, out_json):
+    """
+    Convert Google Earth KML/KMZ file to GeoJSON
+    """
+
+    is_kmz = True if in_file.name.endswith('.kmz') else False
+
+    if is_kmz:
+        with ZipFile(in_file) as zf:
+            zf.extractall(os.path.dirname(out_json))
+        in_file = os.path.join(os.path.dirname(out_json), 'doc.kml')
+
+    srcDS = gdal.OpenEx(in_file)
+    ds = gdal.VectorTranslate(out_json, srcDS, format='GeoJSON')
+
+    # Clean Google Earth elements
+    gdf = gpd.GeoDataFrame.from_file(out_json)
+    gdf.set_crs(epsg=4326, inplace=True)
+    gdf = gdf[gdf['geometry'].astype(str).str.contains('LINESTRING') == True]
+
+    # Close datasets
+    ds = None
+    srcDS = None
+    if is_kmz:
+        try:
+            os.remove(in_file)
+        except Exception:
+            pass
+
+    return gdf
+
+
+if __name__ == '__main__':
+    pass
